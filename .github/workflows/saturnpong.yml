@@ -35,15 +35,17 @@ jobs:
       run: |
         cd jo_engine_src
         
-        # Jo Engine'in çalışan 'mars' örnek projesinin içindeki C kaynak kodunu temizliyoruz
-        # Ve kendi assembly dosyamızı oraya yerleştiriyoruz
+    - name: Integrate SaturnPong Source into Jo Engine Sample Structure
+      run: |
+        cd jo_engine_src
         if [ -d "mars" ]; then
           rm -f mars/*.c mars/*.cpp mars/*.h || true
           cp ../saturnpong.s mars/
-          
           if [ -f "../IP.BIN" ]; then
             cp ../IP.BIN mars/
           fi
+          printf "TARGET = saturnpong\nSRCS = saturnpong.s\nJO_ENGINE_SRC = ..\ninclude \$(JO_ENGINE_SRC)/Makefile.cfg\n" > mars/Makefile
+        fi
           
           # Mars projesinin Makefile dosyasını saf Assembly (.s) derleyecek şekilde güncelliyoruz
           cat << 'EOF' > mars/Makefile
