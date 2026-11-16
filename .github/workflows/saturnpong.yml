@@ -1,4 +1,4 @@
-name: Build SaturnPong (Jo Engine v2026.3 & Artifacts)
+name: Build SaturnPong (Jo Engine Native ISO Pipeline)
 
 on:
   push:
@@ -17,11 +17,10 @@ jobs:
     - name: Install Build Prerequisites & Unzip
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential wget unzip
+        sudo apt-get install -y build-essential wget unzip zip
 
     - name: Download Jo Engine v2026.3 via Direct Zip Archive
       run: |
-        # Doğrudan sağladığın resmi Jo Engine v2026.3 sürüm adresinden indiriyoruz
         wget -O jo_engine.zip https://github.com/johannes-fetz/joengine/archive/refs/tags/v2026.3.zip
         unzip -q jo_engine.zip
         mv joengine-2026.3 jo_engine_src
@@ -35,29 +34,35 @@ jobs:
           cp IP.BIN jo_engine_src/
         fi
 
-    - name: Compile and Package Using Jo Engine Native Pipeline
+    - name: Compile and Generate ISO Using Jo Engine Internal System
       run: |
         cd jo_engine_src
         
+        # Jo Engine'in kendi dahili make/build ve ISO oluşturma betiklerini çalıştırıyoruz
         if [ -f "jo_make" ]; then
           chmod +x jo_make
-          ./jo_make || echo "Jo Engine build script executed."
+          ./jo_make
         elif [ -f "Makefile.cfg" ]; then
-          make -f Makefile.cfg || echo "Makefile config processed."
+          make -f Makefile.cfg
         else
-          echo "Triggering default build sequence..."
+          make
         fi
 
-    - name: Capture and Organize Build Artifacts
+    - name: Capture Jo Engine's Native ISO and CUE Outputs
       run: |
         mkdir -p final_output
-        find jo_engine_src -name "*.iso" -exec cp {} final_output/ \;
-        find jo_engine_src -name "*.bin" -exec cp {} final_output/ \;
-        find jo_engine_src -name "*.cue" -exec cp {} final_output/ \;
-        cp jo_engine_src/saturnpong/* final_output/ || true
+        
+        # Jo Engine'in kök dizininde veya alt klasörlerinde ürettiği orijinal ISO/CUE/BIN dosyalarını arayıp topluyoruz
+        find . -type f \( -name "*.iso" -o -name "*.cue" -o -name "*.bin" \) -exec cp {} final_output/ \;
+        
+        # İçeriği kontrol etmek için listeleyelim
+        ls -la final_output/
+        
+        # Kullanıcının indirmesi için zip paketi haline getirelim
+        zip -r SaturnPong-JoEngine-Native-ISO.zip final_output/
 
-    - name: Upload Complete Artifacts
+    - name: Upload Native ISO Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: SaturnPong-JoEngine-v2026.3-Artifacts
-        path: final_output/
+        name: SaturnPong-Native-ISO-Bundle
+        path: SaturnPong-JoEngine-Native-ISO.zip
