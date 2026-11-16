@@ -25,56 +25,44 @@ jobs:
         unzip -q jo_engine.zip
         mv joengine-2026.3 jo_engine_src
 
-    - name: Setup Permissions for Native Tools
+    - name: Setup Toolchain Permissions & Integrate Assembly Source
       run: |
         cd jo_engine_src
-        # Jo Engine'in kendi derleme ve yardımcı araçlarına tam yetki verelim
         chmod -R +x Compiler/LINUX/ || true
         
-    - name: Integrate SaturnPong Source into Jo Engine Sample Structure
-      run: |
-        cd jo_engine_src
+        # Mars örnek projesinin içindeki C dosyalarını temizleyip saturnpong.s dosyamızı koyuyoruz
         if [ -d "mars" ]; then
           rm -f mars/*.c mars/*.cpp mars/*.h || true
           cp ../saturnpong.s mars/
+          
           if [ -f "../IP.BIN" ]; then
             cp ../IP.BIN mars/
           fi
-          printf "TARGET = saturnpong\nSRCS = saturnpong.s\nJO_ENGINE_SRC = ..\ninclude \$(JO_ENGINE_SRC)/Makefile.cfg\n" > mars/Makefile
-        fi
           
-          # Mars projesinin Makefile dosyasını saf Assembly (.s) derleyecek şekilde güncelliyoruz
-          cat << 'EOF' > mars/Makefile
-          TARGET = saturnpong
-          SRCS = saturnpong.s
-          JO_ENGINE_SRC = ..
-          include $(JO_ENGINE_SRC)/Makefile.cfg
-          EOF
+          # Makefile içeriğini doğrudan güvenli bir şekilde yazıyoruz
+          echo "TARGET = saturnpong" > mars/Makefile
+          echo "SRCS = saturnpong.s" >> mars/Makefile
+          echo "JO_ENGINE_SRC = .." >> mars/Makefile
+          echo "include \$(JO_ENGINE_SRC)/Makefile.cfg" >> mars/Makefile
         fi
-        
-    - name: Compile and Run Native Cue Maker
+
+    - name: Compile and Run Jo Engine Native Cue Maker
       run: |
         cd jo_engine_src
-        
-        # Doğrudan mars (artık saturnpong oldu) klasörüne girip derlemeyi tetikliyoruz
         if [ -d "mars" ]; then
           cd mars
           make clean || true
           make
           
-          # Jo Engine'in dahili Cue Maker aracını doğrudan imajın üretildiği bu klasörde çalıştırıyoruz
-          # JoEngineCueMaker derlenen dosyaları tarayarak CUE ve ISO imajını oluşturur
+          # Jo Engine'in dahili Cue Maker aracını çalıştırarak ISO ve CUE imajını üretiyoruz
           ../../Compiler/LINUX/Other\ Utilities/JoEngineCueMaker || true
           cd ..
         fi
 
-    - name: Capture Native Jo Engine Outputs
+    - name: Capture and Package Native Outputs
       run: |
         mkdir -p final_output
-        
-        # Üretilen ISO, CUE ve BIN dosyalarını toplayalım
         find jo_engine_src -type f \( -name "*.iso" -o -name "*.cue" -o -name "*.bin" \) -exec cp {} final_output/ \;
-        
         ls -la final_output/
         zip -r SaturnPong-JoEngine-Native.zip final_output/
 
