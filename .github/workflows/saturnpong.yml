@@ -31,44 +31,43 @@ jobs:
         # Jo Engine'in kendi derleme ve yardımcı araçlarına tam yetki verelim
         chmod -R +x Compiler/LINUX/ || true
 
-    - name: Integrate SaturnPong Source into Jo Engine
+    - name: Integrate SaturnPong Source into Jo Engine Sample Structure
       run: |
         cd jo_engine_src
         
-        # Kodumuzu uygun bir klasöre yerleştiriyoruz
-        mkdir -p saturnpong
-        cp ../saturnpong.s saturnpong/
-        
-        if [ -f "../IP.BIN" ]; then
-          cp ../IP.BIN saturnpong/
+        # Jo Engine'in çalışan 'mars' örnek projesinin içindeki C kaynak kodunu temizliyoruz
+        # Ve kendi assembly dosyamızı oraya yerleştiriyoruz
+        if [ -d "mars" ]; then
+          rm -f mars/*.c mars/*.cpp mars/*.h || true
+          cp ../saturnpong.s mars/
+          
+          if [ -f "../IP.BIN" ]; then
+            cp ../IP.BIN mars/
+          fi
+          
+          # Mars projesinin Makefile dosyasını saf Assembly (.s) derleyecek şekilde güncelliyoruz
+          cat << 'EOF' > mars/Makefile
+          TARGET = saturnpong
+          SRCS = saturnpong.s
+          JO_ENGINE_SRC = ..
+          include $(JO_ENGINE_SRC)/Makefile.cfg
+          EOF
         fi
-
+        
     - name: Compile and Run Native Cue Maker
       run: |
         cd jo_engine_src
         
-        # Eğer jo_make varsa onu çalıştıralım, yoksa mars örneği üzerinden derleme tetikleyelim
-        if [ -f "jo_make" ]; then
-          chmod +x jo_make
-          ./jo_make || true
-        elif [ -d "mars" ]; then
-          # Mars projesinin Makefile yapsını kopyalayarak hızlı bir derleme yolu açalım
-          cp mars/Makefile saturnpong/
-          cd saturnpong
-          make || true
+        # Doğrudan mars (artık saturnpong oldu) klasörüne girip derlemeyi tetikliyoruz
+        if [ -d "mars" ]; then
+          cd mars
+          make clean || true
+          make
+          
+          # Jo Engine'in dahili Cue Maker aracını doğrudan imajın üretildiği bu klasörde çalıştırıyoruz
+          # JoEngineCueMaker derlenen dosyaları tarayarak CUE ve ISO imajını oluşturur
+          ../../Compiler/LINUX/Other\ Utilities/JoEngineCueMaker || true
           cd ..
-        fi
-        
-        # Doğrudan kök dizinden absolute (tam) yolla JoEngineCueMaker aracını çalıştıralım
-        # Böylece dizin kayması (No such file or directory) hatası asla yaşanmaz
-        CUE_MAKER="./Compiler/LINUX/Other Utilities/JoEngineCueMaker"
-        if [ -f "$CUE_MAKER" ]; then
-          chmod +x "$CUE_MAKER"
-          "$CUE_MAKER" || true
-        else
-          # Boşluklu dizin ihtimaline karşı alternatif yol
-          ALT_MAKER="./Compiler/LINUX/Other Utilities/JoEngineCueMaker"
-          find "Compiler/LINUX" -name "JoEngineCueMaker" -exec chmod +x {} \; -exec {} \; || true
         fi
 
     - name: Capture Native Jo Engine Outputs
