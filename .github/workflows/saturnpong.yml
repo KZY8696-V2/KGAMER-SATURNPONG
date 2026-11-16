@@ -1,0 +1,63 @@
+name: Build SaturnPong (vasmsh_mot)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install Build Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget make genisoimage build-essential
+
+    - name: Download and Prepare vasmsh_mot
+      run: |
+        # vasm kaynak kodunu resmi web sitesinden indir ve derle
+        wget http://sun.hasenbraten.de/vasm/release/vasm.tar.gz
+        tar -zxvf vasm.tar.gz
+        cd vasm
+        
+        # vasmsh_mot (Motorola syntax for SuperH) motorunu derle
+        make CPU=sh SYNTAX=mot
+        
+        # Binary dosyasını sistem yoluna taşı
+        sudo cp vasmsh_mot /usr/local/bin/
+        cd ..
+        
+        # Kurulumu test et
+        vasmsh_mot -version
+
+    - name: Compile SaturnPong Assembly Source
+      run: |
+        # cd_root dizinini oluştur
+        mkdir -p cd_root
+        
+        # vasmsh_mot ile doğrudan .bin çıktısı üret
+        vasmsh_mot -Fbin -o cd_root/0.bin saturnpong.s
+
+    - name: Generate Sega Saturn ISO Image
+      run: |
+        # Not: IP.BIN (Sega Saturn boot sektörü) projenizin kök dizininde bulunmalıdır.
+        if [ -f "IP.BIN" ]; then
+          genisoimage -V "SATURNPONG" -sysid "SEGA SATURN" -volid "SATURNPONG" -G IP.BIN -o saturnpong.iso cd_root/
+        else
+          echo "Warning: IP.BIN not found. Generating ISO without boot sector header."
+          genisoimage -V "SATURNPONG" -sysid "SEGA SATURN" -volid "SATURNPONG" -o saturnpong.iso cd_root/
+        fi
+
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: SaturnPong-ISO-Binaries
+        path: |
+          saturnpong.iso
+          cd_root/0.bin
