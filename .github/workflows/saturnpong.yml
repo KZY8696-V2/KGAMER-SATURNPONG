@@ -14,8 +14,10 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - name: Clone Jo Engine (Official Repository)
+    - name: Clone Jo Engine (Public HTTPS URL Fix)
       run: |
+        # Etkileşimli şifre / kullanıcı adı istememesi için URL'yi ve ortam değişkenlerini yapılandırıyoruz
+        git config --global url."https://github.com/".insteadOf git@github.com:
         git clone --depth 1 https://github.com/Jo-Engine/Jo-Engine.git jo_engine_src
 
     - name: Install Minimal Build Prerequisites
@@ -25,11 +27,9 @@ jobs:
 
     - name: Integrate SaturnPong Source into Jo Engine
       run: |
-        # Proje kaynak kodumuzu Jo Engine çalışma alanına konumlandırıyoruz
         mkdir -p jo_engine_src/saturnpong
         cp saturnpong.s jo_engine_src/saturnpong/
         
-        # Eğer varsa IP.BIN dosyasını Jo Engine kök dizinine taşı
         if [ -f "IP.BIN" ]; then
           cp IP.BIN jo_engine_src/
         fi
@@ -38,7 +38,6 @@ jobs:
       run: |
         cd jo_engine_src
         
-        # Jo Engine içerisindeki yerleşik derleme ve CD build betiklerini tetikle
         if [ -f "jo_make" ]; then
           chmod +x jo_make
           ./jo_make || echo "Jo Engine build script executed."
@@ -50,13 +49,10 @@ jobs:
 
     - name: Capture and Organize Build Artifacts
       run: |
-        # Üretilen ISO veya binary çıktıları toparla
         mkdir -p final_output
         find jo_engine_src -name "*.iso" -exec cp {} final_output/ \;
         find jo_engine_src -name "*.bin" -exec cp {} final_output/ \;
         find jo_engine_src -name "*.cue" -exec cp {} final_output/ \;
-        
-        # Eğer jo_make otomatik ISO üretmediyse, temel dosya kopyasını artifact'e ekle
         cp jo_engine_src/saturnpong/* final_output/ || true
 
     - name: Upload Complete Artifacts
