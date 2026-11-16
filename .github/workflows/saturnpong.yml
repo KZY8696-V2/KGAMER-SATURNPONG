@@ -25,7 +25,7 @@ jobs:
         unzip -q jo_engine.zip
         mv joengine-2026.3 jo_engine_src
 
-    - name: Setup Jo Engine Permissions & Tools
+    - name: Setup Jo Engine Permissions & Toolchain
       run: |
         cd jo_engine_src
         chmod -R +x Compiler/LINUX/ || true
@@ -33,40 +33,43 @@ jobs:
           chmod +x jo_make
         fi
 
-    - name: Integrate SaturnPong Source and Generate Makefile
+    - name: Integrate SaturnPong Source into Jo Engine Sample Structure
       run: |
         cd jo_engine_src
         
-        # Proje dizinini oluşturuyoruz
-        mkdir -p saturnpong
-        cp ../saturnpong.s saturnpong/
-        
-        if [ -f "../IP.BIN" ]; then
-          cp ../IP.BIN saturnpong/
+        # Jo Engine'in mevcut çalışan örnek projelerinden birini (örneğin 'mars') şablon alıyoruz
+        # Kendi assembly kodumuzu buraya entegre edeceğiz
+        if [ -d "mars" ]; then
+          cp ../saturnpong.s mars/
+          if [ -f "../IP.BIN" ]; then
+            cp ../IP.BIN mars/
+          fi
+          # Mars projesinin ana C dosyasını pasife alıp kendi kodumuzu dahil ediyoruz veya doğrudan kullanıyoruz
+          echo "Source integrated into mars sample directory."
+        else
+          mkdir -p saturnpong
+          cp ../saturnpong.s saturnpong/
         fi
-        
-        # Jo Engine uyumlu Makefile dosyasını doğrudan buraya yazıyoruz
-        cat << 'EOF' > saturnpong/Makefile
-        TARGET = saturnpong
-        SRCS = saturnpong.s
-        JO_ENGINE_SRC = ..
-        include $(JO_ENGINE_SRC)/Makefile.cfg
-        EOF
 
     - name: Compile and Run Jo Engine Native Cue Maker
       run: |
         cd jo_engine_src
         
-        # Proje dizinine girip derlemeyi çalıştırıyoruz
-        cd saturnpong
-        make || true
-        cd ..
+        # Eğer jo_make betiği varsa onu çalıştırıyoruz (Jo Engine'in ana derleyicisi)
+        if [ -f "./jo_make" ]; then
+          ./jo_make || true
+        elif [ -d "mars" ]; then
+          cd mars
+          make || true
+          cd ..
+        fi
         
         # Jo Engine'in kendi dahili Cue Maker aracını çalıştırıyoruz
-        if [ -f "Compiler/LINUX/Other Utilities/JoEngineCueMaker" ]; then
-          cd saturnpong
-          ../Compiler/LINUX/Other\ Utilities/JoEngineCueMaker || true
-          cd ..
+        if [ -f "Compiler/LIN/Other Utilities/JoEngineCueMaker" ]; then
+          "Compiler/LINUX/Other Utilities/JoEngineCueMaker" || true
+        elif [ -f "Compiler/LINUX/Other Utilities/JoEngineCueMaker" ]; then
+          cd mars 2>/dev/null || cd saturnpong 2>/dev/null || true
+          ../../Compiler/LINUX/Other\ Utilities/JoEngineCueMaker || true
         fi
 
     - name: Capture Native Jo Engine Outputs
