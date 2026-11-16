@@ -30,10 +30,6 @@ jobs:
         cd jo_engine_src
         # Jo Engine'in kendi derleme ve yardımcı araçlarına tam yetki verelim
         chmod -R +x Compiler/LINUX/ || true
-
-    - name: Integrate SaturnPong Source into Jo Engine Sample Structure
-      run: |
-        cd jo_engine_src
         
     - name: Integrate SaturnPong Source into Jo Engine Sample Structure
       run: |
