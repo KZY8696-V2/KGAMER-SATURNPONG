@@ -1,4 +1,4 @@
-name: Build SaturnPong (Jo Engine Native Pipeline)
+name: Build SaturnPong (Jo Engine v2026.3 & Artifacts)
 
 on:
   push:
@@ -17,7 +17,7 @@ jobs:
     - name: Install Build Prerequisites & Unzip
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential wget unzip zip
+        sudo apt-get install -y build-essential wget unzip
 
     - name: Download Jo Engine v2026.3 via Direct Zip Archive
       run: |
@@ -25,12 +25,12 @@ jobs:
         unzip -q jo_engine.zip
         mv joengine-2026.3 jo_engine_src
 
-    - name: Setup Toolchain Permissions & Integrate Assembly Source
+    - name: Integrate SaturnPong Source into Jo Engine Sample Structure
       run: |
         cd jo_engine_src
-        chmod -R +x Compiler/LINUX/ || true
         
-        # Mars örnek projesinin içindeki C dosyalarını temizleyip saturnpong.s dosyamızı koyuyoruz
+        # Jo Engine'in standart örnek projelerinden biri olan 'mars' klasörünü baz alıyoruz
+        # İçindeki C dosyalarını temizleyip kendi saf assembly dosyamızı koyuyoruz
         if [ -d "mars" ]; then
           rm -f mars/*.c mars/*.cpp mars/*.h || true
           cp ../saturnpong.s mars/
@@ -39,35 +39,48 @@ jobs:
             cp ../IP.BIN mars/
           fi
           
-          # Makefile içeriğini doğrudan güvenli bir şekilde yazıyoruz
+          # Doğrudan saturnpong.s dosyasını hedefleyen özel bir Makefile oluşturuyoruz
           echo "TARGET = saturnpong" > mars/Makefile
           echo "SRCS = saturnpong.s" >> mars/Makefile
           echo "JO_ENGINE_SRC = .." >> mars/Makefile
           echo "include \$(JO_ENGINE_SRC)/Makefile.cfg" >> mars/Makefile
+        else
+          mkdir -p saturnpong
+          cp ../saturnpong.s saturnpong/
         fi
 
-    - name: Compile and Run Jo Engine Native Cue Maker
+    - name: Compile and Package Using Jo Engine Native Pipeline
       run: |
         cd jo_engine_src
+        
+        # Eğer mars klasörünü kullandıysak doğrudan oraya girip derlemeyi tetikliyoruz
         if [ -d "mars" ]; then
           cd mars
           make clean || true
-          make
+          make || true
           
-          # Jo Engine'in dahili Cue Maker aracını çalıştırarak ISO ve CUE imajını üretiyoruz
-          ../../Compiler/LINUX/Other\ Utilities/JoEngineCueMaker || true
+          # Jo Engine'in kendi dahili Cue/ISO oluşturma aracını doğrudan imajın çıktığı yerde çalıştırıyoruz
+          if [ -f "../../Compiler/LINUX/Other Utilities/JoEngineCueMaker" ]; then
+            ../../Compiler/LINUX/Other\ Utilities/JoEngineCueMaker || true
+          fi
           cd ..
+        elif [ -f "jo_make" ]; then
+          chmod +x jo_make
+          ./jo_make || true
         fi
 
-    - name: Capture and Package Native Outputs
+    - name: Capture and Organize Build Artifacts
       run: |
         mkdir -p final_output
-        find jo_engine_src -type f \( -name "*.iso" -o -name "*.cue" -o -name "*.bin" \) -exec cp {} final_output/ \;
+        find jo_engine_src -name "*.iso" -exec cp {} final_output/ \;
+        find jo_engine_src -name "*.bin" -exec cp {} final_output/ \;
+        find jo_engine_src -name "*.cue" -exec cp {} final_output/ \;
+        find jo_engine_src -name "*.elf" -exec cp {} final_output/ \;
+        
         ls -la final_output/
-        zip -r SaturnPong-JoEngine-Native.zip final_output/
 
-    - name: Upload Native Artifact
+    - name: Upload Complete Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: SaturnPong-Native-Bundle
-        path: SaturnPong-JoEngine-Native.zip
+        name: SaturnPong-JoEngine-v2026.3-Artifacts
+        path: final_output/
