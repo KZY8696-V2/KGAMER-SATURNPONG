@@ -1,4 +1,4 @@
-name: Build SaturnPong (Jo Engine Native Tools & Artifacts)
+name: Build SaturnPong (Jo Engine Zip Archive & Artifacts)
 
 on:
   push:
@@ -14,24 +14,17 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - name: Configure Git for Auth-Free Clone
-      run: |
-        # Git credential helper'ı sıfırlayarak şifre/kullanıcı adı prompt'unu engelliyoruz
-        git config --global --unset credential.helper || true
-        git config --system --unset credential.helper || true
-        export GIT_TERMINAL_PROMPT=0
-
-    - name: Clone Jo Engine (Force Clean HTTP GET)
-      env:
-        GIT_TERMINAL_PROMPT: 0
-      run: |
-        # Doğrudan HTTP GET kullanarak kimlik doğrulamasız klonlama
-        git clone --depth 1 -c advice.detachedHead=false https://github.com/Jo-Engine/Jo-Engine.git jo_engine_src
-
-    - name: Install Minimal Build Prerequisites
+    - name: Install Build Prerequisites & Unzip
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential wget unzip
+
+    - name: Download Jo Engine via Direct Zip Archive (Bypasses Git Auth)
+      run: |
+        # Git clone kullanmadan doğrudan HTTPS üzerinden ZIP olarak indiriyoruz (Kimlik doğrulama gerektirmez)
+        wget -O jo_engine.zip https://github.com/Jo-Engine/Jo-Engine/archive/refs/heads/master.zip
+        unzip -q jo_engine.zip
+        mv Jo-Engine-master jo_engine_src
 
     - name: Integrate SaturnPong Source into Jo Engine
       run: |
