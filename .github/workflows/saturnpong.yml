@@ -1,4 +1,4 @@
-name: Build SaturnPong (Jo Engine Zip Archive & Artifacts)
+name: Build SaturnPong (Jo Engine v2026.3 & Artifacts)
 
 on:
   push:
@@ -19,12 +19,12 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y build-essential wget unzip
 
-    - name: Download Jo Engine via Direct Zip Archive (Bypasses Git Auth)
+    - name: Download Jo Engine v2026.3 via Direct Zip Archive
       run: |
-        # Git clone kullanmadan doğrudan HTTPS üzerinden ZIP olarak indiriyoruz (Kimlik doğrulama gerektirmez)
-        wget -O jo_engine.zip https://github.com/Jo-Engine/Jo-Engine/archive/refs/heads/master.zip
+        # Doğrudan sağladığın resmi Jo Engine v2026.3 sürüm adresinden indiriyoruz
+        wget -O jo_engine.zip https://github.com/johannes-fetz/joengine/archive/refs/tags/v2026.3.zip
         unzip -q jo_engine.zip
-        mv Jo-Engine-master jo_engine_src
+        mv joengine-2026.3 jo_engine_src
 
     - name: Integrate SaturnPong Source into Jo Engine
       run: |
@@ -59,5 +59,5 @@ jobs:
     - name: Upload Complete Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: SaturnPong-JoEngine-Artifacts
+        name: SaturnPong-JoEngine-v2026.3-Artifacts
         path: final_output/
