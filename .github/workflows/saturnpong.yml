@@ -25,48 +25,55 @@ jobs:
         unzip -q jo_engine.zip
         mv joengine-2026.3 jo_engine_src
 
-    - name: Integrate SaturnPong Source into Jo Engine Sample Structure
+    - name: Setup Jo Engine Permissions & Tools
       run: |
-        # Jo Engine projeleri genellikle 'jo_engine_src/mars' veya örnek bir klasör yapısında derlenir.
-        # Kaynak dosyamızı Jo Engine'in örnek projelerinden birinin içine veya kendi klasörüne kopyalıyoruz.
-        mkdir -p jo_engine_src/saturnpong
-        cp saturnpong.s jo_engine_src/saturnpong/
+        cd jo_engine_src
+        chmod -R +x Compiler/LINUX/ || true
+        if [ -f "jo_make" ]; then
+          chmod +x jo_make
+        fi
+
+    - name: Integrate SaturnPong Source and Generate Makefile
+      run: |
+        cd jo_engine_src
         
-        if [ -f "IP.BIN" ]; then
-          cp IP.BIN jo_engine_src/saturnpong/
+        # Proje dizinini oluşturuyoruz
+        mkdir -p saturnpong
+        cp ../saturnpong.s saturnpong/
+        
+        if [ -f "../IP.BIN" ]; then
+          cp ../IP.BIN saturnpong/
         fi
         
-        # Jo Engine'in örnek bir makefile yapısını projemize kopyalayarak derlenebilir hale getiriyoruz
-        if [ -f "jo_engine_src/mars/Makefile" ]; then
-          cp jo_engine_src/mars/Makefile jo_engine_src/saturnpong/
-        elif [ -f "jo_engine_src/Makefile.cfg" ]; then
-          cp jo_engine_src/Makefile.cfg jo_engine_src/saturnpong/
-        fi
+        # Jo Engine uyumlu Makefile dosyasını doğrudan buraya yazıyoruz
+        cat << 'EOF' > saturnpong/Makefile
+        TARGET = saturnpong
+        SRCS = saturnpong.s
+        JO_ENGINE_SRC = ..
+        include $(JO_ENGINE_SRC)/Makefile.cfg
+        EOF
 
     - name: Compile and Run Jo Engine Native Cue Maker
       run: |
-        # Doğrudan projenin kendi klasörüne girip derlemeyi başlatıyoruz
-        cd jo_engine_src/saturnpong
+        cd jo_engine_src
         
-        # Derleme işlemi
+        # Proje dizinine girip derlemeyi çalıştırıyoruz
+        cd saturnpong
         make || true
+        cd ..
         
-        # Üst dizindeki Jo Engine ana derleme araçlarına izin verelim
-        cd ../..
-        chmod -R +x Compiler/LINUX/ || true
-        
-        # Jo Engine'in kendi dahili Cue Maker aracını doğru yoldan çağırıyoruz
-        if [ -f "jo_engine_src/Compiler/LINUX/Other Utilities/JoEngineCueMaker" ]; then
-          cd jo_engine_src/saturnpong
+        # Jo Engine'in kendi dahili Cue Maker aracını çalıştırıyoruz
+        if [ -f "Compiler/LINUX/Other Utilities/JoEngineCueMaker" ]; then
+          cd saturnpong
           ../Compiler/LINUX/Other\ Utilities/JoEngineCueMaker || true
-          cd ../..
+          cd ..
         fi
 
     - name: Capture Native Jo Engine Outputs
       run: |
         mkdir -p final_output
         
-        # Jo Engine'in kendi dizininde ürettiği iso, cue ve bin dosyalarını topluyoruz
+        # Üretilen ISO, CUE ve BIN dosyalarını topluyoruz
         find jo_engine_src -type f \( -name "*.iso" -o -name "*.cue" -o -name "*.bin" \) -exec cp {} final_output/ \;
         
         ls -la final_output/
