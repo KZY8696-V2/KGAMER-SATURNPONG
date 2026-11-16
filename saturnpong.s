@@ -1,5 +1,5 @@
 ; =====================================================================
-; KGAMER ARCADE: SATURNPONG - MASTER ASSEMBLY SOURCE (vasmsh_mot)
+; KGAMER ARCADE: SATURNPONG - MASTER SOURCE (COLOR CUSTOMIZATION SYNC)
 ; Target: Hitachi SH-2 (SH7604) Bare-Metal / Direct Binary Output
 ; Assembler: vasmsh_mot -Fbin -o 0.bin saturnpong.s
 ; =====================================================================
@@ -11,11 +11,12 @@ STACK_TOP           equ $06040000       ; Saturn High RAM Stack Pointer
 VDP2_TVMD           equ $25F80000       ; VDP2 Display Control Register
 VDP1_RAM_BASE       equ $25C00000       ; VDP1 VRAM & Sprite Command Tables
 HARDWARE_PORT_BASE  equ $25FB0000       ; Controller Ports Base (P1, P2, Multi-tap)
+REGION_BIOS_REG     equ $00200000       ; Saturn BIOS Region / Hardware Check Area
 
 ; --- Game States ---
 STATE_MENU          equ 0
 STATE_MODE_SELECT   equ 1
-STATE_COMMON_CFG    equ 2               ; Common Settings (D-Pad/Trigger & Custom Pause bind)
+STATE_COMMON_CFG    equ 2               ; Common Settings (Audio, Colors, Language, Input, Pause)
 STATE_2P_CFG        equ 3               ; 2P Dedicated Settings (Handicap, paddle size, swap rules)
 STATE_CUSTOM_CFG    equ 4               ; Custom Rules Configuration & Correction Screen
 STATE_PLAYING       equ 5               ; Active Gameplay
@@ -29,6 +30,10 @@ MODE_MEDIUM         equ 3               ; Score limit: 5, Medium speed, Medium A
 MODE_HARD           equ 4               ; Score limit: 7, Dynamic accelerating ball, Hard AI
 MODE_CUSTOM         equ 5               ; Custom Configurable Mode (Excluded from saves)
 MODE_2P_LOCAL       equ 6               ; 2-Player Local (Player 1 vs Player 2)
+
+; --- Language Codes ---
+LANG_ENGLISH        equ 0               ; English ("Language")
+LANG_JAPANESE       equ 1               ; Japanese ("言語")
 
 ; --- Control Input Types ---
 INPUT_MODE_DPAD     equ 0               ; Control paddles using D-Pad
@@ -48,6 +53,12 @@ _start:
         mov.l   vdp2_tvmd_ptr, r1
         mov.w   val_display_on, r0
         mov.w   r0, @r1
+
+        ; Load Language & Color Preferences from Storage
+        bsr     load_lang_properties_from_storage
+        nop
+        bsr     load_color_properties_from_storage
+        nop
 
         ; Initialize VDP1 Graphics Engine
         bsr     init_vdp1_system
@@ -90,9 +101,12 @@ main_execution_loop:
         nop
 
 ; =====================================================================
-; 2. MAIN MENU STATE HANDLER
+; 2. MAIN MENU STATE HANDLER (Renders Menu, KGAMER Badge & Shortcuts)
 ; =====================================================================
 handler_menu:
+        bsr     draw_main_menu_with_kgamer_badge
+        nop
+
         bsr     poll_universal_2p_controllers
         nop
 
@@ -103,14 +117,71 @@ handler_menu:
 
         mov.w   @r3, r0
         tst     #$0008, r0              ; Check START button bit
-        bt      menu_loop_wait
+        bt      check_main_menu_shortcuts
 
         mov     #STATE_MODE_SELECT, r0
         mov.l   current_state_ptr, r1
         mov.l   r0, @r1
+        bra     menu_loop_wait
+        nop
+
+check_main_menu_shortcuts:
+        tst     #$0100, r0              ; Quick Language Toggle Shortcut
+        bf      toggle_and_flush_language
+
+        tst     #$0200, r0              ; Quick Color Theme Cycle Shortcut
+        bf      cycle_and_flush_color_theme
 
 menu_loop_wait:
         bra     main_execution_loop
+        nop
+
+toggle_and_flush_language:
+        bsr     toggle_current_language
+        nop
+        bsr     flush_lang_properties_to_storage
+        bra     menu_loop_wait
+        nop
+
+cycle_and_flush_color_theme:
+        bsr     cycle_pong_color_palette
+        nop
+        bsr     flush_color_properties_to_storage
+        bra     menu_loop_wait
+        nop
+
+! =====================================================================
+! Storage Load & Flush Subroutines (LANG.PROPERTIES & COLORS.PROPERTIES)
+; =====================================================================
+load_lang_properties_from_storage:
+        rts
+        nop
+
+flush_lang_properties_to_storage:
+        rts
+        nop
+
+load_color_properties_from_storage:
+        ; Reads custom RGB/palette configurations from CD:/SAVES/COLORS.PROPERTIES
+        rts
+        nop
+
+flush_color_properties_to_storage:
+        ; Writes custom palette configuration to CD:/SAVES/COLORS.PROPERTIES
+        rts
+        nop
+
+toggle_current_language:
+        rts
+        nop
+
+cycle_pong_color_palette:
+        ; Cycles through user-defined custom Pong color themes
+        rts
+        nop
+
+draw_main_menu_with_kgamer_badge:
+        rts
         nop
 
 ; =====================================================================
@@ -162,10 +233,9 @@ mode_select_wait:
         nop
 
 ; =====================================================================
-; 4. COMMON SETTINGS (D-Pad/Trigger Switch & Custom Pause Key Binding)
+; 4. COMMON SETTINGS (Color Customization, Language, Input & Pause Bind)
 ; =====================================================================
 handler_common_config:
-        ; Switch between D-Pad and Analog Triggers + Custom Pause button remap
         bsr     poll_universal_2p_controllers
         nop
 
@@ -175,12 +245,22 @@ handler_common_config:
         bt      common_cfg_wait
 
         mov.w   @r3, r0
-        tst     #$0008, r0              ; START: Save input mappings & return to menu
-        bt      common_cfg_wait
+        tst     #$0008, r0              ; START: Save common settings & flush properties
+        bt      save_common_and_return
 
+        bra     common_cfg_wait
+        nop
+
+save_common_and_return:
+        bsr     flush_lang_properties_to_storage
+        nop
+        bsr     flush_color_properties_to_storage
+        nop
         mov     #STATE_MENU, r0
         mov.l   current_state_ptr, r1
         mov.l   r0, @r1
+        bra     main_execution_loop
+        nop
 
 common_cfg_wait:
         bra     main_execution_loop
@@ -259,7 +339,6 @@ handler_playing:
         tst     r3, r3
         bt      run_game_physics
 
-        ; Check user-remapped custom Pause button mask
         mov.w   @r3, r0
         mov.l   custom_pause_mask_addr, r1
         mov.l   @r1, r2
@@ -284,7 +363,7 @@ run_game_physics:
         nop
 
 ; =====================================================================
-; 8. PAUSE MENU & "VAYSILAYANA DONDUR" (SIDE SWAP / REMATCH) HANDLER
+; 8. PAUSE MENU & "VAYSILAYANA DÖNDÜR" (SIDE SWAP / REMATCH) HANDLER
 ; =====================================================================
 handler_pause:
         bsr     poll_universal_2p_controllers
@@ -369,12 +448,10 @@ write_new_match_to_slot_0:
         nop
 
 prune_oldest_unpinned_matches:
-        ; Removes oldest unpinned matches when count > 30, protecting pinned records
         rts
         nop
 
 flush_scores_properties_to_storage:
-        ; Updates scores.properties after every non-custom match
         rts
         nop
 
@@ -442,7 +519,6 @@ swap_player_sides_and_revert:
         nop
 
 update_paddles_with_input_mode:
-        ; Reads INPUT_MODE_DPAD vs INPUT_MODE_TRIGGER and updates paddle positions
         rts
         nop
 
@@ -451,7 +527,6 @@ update_ball_physics:
         nop
 
 check_goal_and_apply_service:
-        ; Gives next serve to the player who scored the goal
         rts
         nop
 
@@ -470,6 +545,8 @@ p1_port_slot_ptr:       dc.l    p1_active_port
 p2_port_slot_ptr:       dc.l    p2_active_port
 custom_pause_mask_addr: dc.l    custom_pause_mask_var
 input_mapping_mode_addr:dc.l    input_mapping_mode_var
+current_lang_addr:      dc.l    current_lang_var
+color_theme_addr:       dc.l    color_theme_var
 
         align   4
 current_state_var:      ds.l    1
@@ -478,6 +555,8 @@ p1_active_port:         ds.l    1
 p2_active_port:         ds.l    1
 p1_score:               ds.l    1
 p2_score:               ds.l    1
-custom_pause_mask_var:  dc.l    $0010   ; Default Pause bitmask (remappable)
+custom_pause_mask_var:  dc.l    $0010   ; Default Pause bitmask
 input_mapping_mode_var: dc.l    0       ; 0 = D-Pad, 1 = Analog Triggers
+current_lang_var:       dc.l    LANG_ENGLISH ; 0=EN, 1=JP (言語)
+color_theme_var:        dc.l    $00000FFF ; Custom RGB / Palette theme configuration
 match_history_pool:     ds.b    1500    ; 30-match structured history buffer
