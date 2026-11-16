@@ -1,4 +1,4 @@
-name: Build SaturnPong (Pure Jo Engine Pipeline)
+name: Build SaturnPong (Jo Engine Native Tools Pipeline)
 
 on:
   push:
@@ -27,7 +27,6 @@ jobs:
 
     - name: Integrate SaturnPong Source into Jo Engine
       run: |
-        # Kaynak kodumuzu Jo Engine içerisindeki uygun konuma taşıyoruz
         mkdir -p jo_engine_src/saturnpong
         cp saturnpong.s jo_engine_src/saturnpong/
         
@@ -35,30 +34,39 @@ jobs:
           cp IP.BIN jo_engine_src/
         fi
 
-    - name: Run Jo Engine Build Routine
+    - name: Run Jo Engine Build & Native Utilities (`JoEngineCueMaker`)
       run: |
         cd jo_engine_src
         
-        # Eğer jo_make varsa onu çalıştır, yoksa doğrudan kaynak entegrasyonu üzerinden ilerle
+        # Linux derleme araçlarına çalıştırma izni verelim
+        chmod -R +x Compiler/LINUX/ || true
+        
+        # Jo Engine'in kendi ana derleme akışını çalıştırıyoruz
         if [ -f "jo_make" ]; then
           chmod +x jo_make
-          ./jo_make || echo "Jo Engine script executed."
+          ./jo_make
         else
-          echo "Processing native source build..."
+          make || true
+        fi
+        
+        # Eğer Jo Engine'in kendi JoEngineCueMaker aracı varsa doğrudan çalıştırarak CUE dosyasını ürettirelim
+        if [ -f "Compiler/LINUX/Other Utilities/JoEngineCueMaker" ]; then
+          chmod +x "Compiler/LINUX/Other Utilities/JoEngineCueMaker"
+          "Compiler/LINUX/Other Utilities/JoEngineCueMaker" || true
         fi
 
-    - name: Capture and Bundle ISO Outputs
+    - name: Capture Native Jo Engine Outputs
       run: |
         mkdir -p final_output
         
-        # Jo Engine'in ürettiği tüm disk imajlarını (iso, cue, bin) toparla
+        # Jo Engine'in ve JoEngineCueMaker'ın ürettiği orijinal iso, cue ve bin dosyalarını topluyoruz
         find jo_engine_src -type f \( -name "*.iso" -o -name "*.cue" -o -name "*.bin" \) -exec cp {} final_output/ \;
         
         ls -la final_output/
-        zip -r SaturnPong-Pure-JoEngine.zip final_output/
+        zip -r SaturnPong-JoEngine-Native.zip final_output/
 
-    - name: Upload Artifact
+    - name: Upload Native Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: SaturnPong-Pure-ISO-Bundle
-        path: SaturnPong-Pure-JoEngine.zip
+        name: SaturnPong-Native-Bundle
+        path: SaturnPong-JoEngine-Native.zip
