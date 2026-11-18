@@ -6,79 +6,137 @@ on:
   pull_request:
     branches: [ main, master ]
 
+permissions:
+  contents: read
+  actions: write
+
 jobs:
-  build-and-package:
+  build:
     runs-on: ubuntu-latest
 
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - name: Install Build & ISO Tools
+    - name: Install Build Prerequisites & Unzip
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential wget unzip genisoimage zip
+        sudo apt-get install -y build-essential wget unzip
 
-    - name: Download Jo Engine v2026.3
+    - name: Download Jo Engine v2026.3 via Direct Zip Archive
       run: |
         wget -O jo_engine.zip https://github.com/johannes-fetz/joengine/archive/refs/tags/v2026.3.zip
         unzip -q jo_engine.zip
         mv joengine-2026.3 jo_engine_src
-        chmod -R +x jo_engine_src/Compiler/LINUX/ || true
 
-    - name: Compile SH-2 Assembly to Raw 0.BIN
+    - name: Setup Toolchain and Integrate Assembly Source
       run: |
-        # Jo Engine içindeki sh-elf araç zincirini PATH'e ekle
-        TOOLCHAIN_BIN=$(find "$PWD/jo_engine_src/Compiler" -name "sh-elf-gcc" -printf "%h\n" | head -n 1)
-        export PATH="$TOOLCHAIN_BIN:$PATH"
-        echo "Using toolchain at: $TOOLCHAIN_BIN"
-
-        mkdir -p build_work cd_root
-        cp saturnpong.s build_work/
-
-        # Önce Jo Engine Makefile altyapısıyla derlemeyi dene
-        if [ -d "jo_engine_src/mars" ]; then
-          rm -f jo_engine_src/mars/*.c jo_engine_src/mars/*.cpp jo_engine_src/mars/*.h || true
-          cp saturnpong.s jo_engine_src/mars/
-          cat << 'EOF' > jo_engine_src/mars/Makefile
-        TARGET = saturnpong
-        SRCS = saturnpong.s
-        JO_ENGINE_SRC = ..
-        include $(JO_ENGINE_SRC)/Makefile.cfg
-        EOF
-          make -C jo_engine_src/mars || true
+        cd jo_engine_src
+        chmod -R +x Compiler/LINUX/ || true
+        
+        if [ -d "mars" ]; then
+          rm -f mars/*.c mars/*.cpp mars/*.h || true
+          cp ../saturnpong.s mars/
+          
+          # Repodaki SaturnCD/IP.BIN klasöründen IP.BIN dosyasını alıyoruz
+          if [ -f "../SaturnCD/IP.BIN/IP.BIN" ]; then
+            cp ../SaturnCD/IP.BIN/IP.BIN mars/IP.BIN
+            echo "IP.BIN successfully copied from SaturnCD/IP.BIN/IP.BIN"
+          fi
+          
+          echo "TARGET = saturnpong" > mars/Makefile
+          echo "SRCS = saturnpong.s" >> mars/Makefile
+          echo "JO_ENGINE_SRC = .." >> mars/Makefile
+          echo "all:" >> mars/Makefile
+          echo "	sh-elf-gcc -c saturnpong.s -o saturnpong.o" >> mars/Makefile
+          echo "	include \$(JO_ENGINE_SRC)/Makefile.cfg" >> mars/Makefile
         fi
 
-        # Çıktıyı saf (header'sız) SH-2 binary (0.BIN) olarak çıkar
-        FOUND_BIN=$(find jo_engine_src/mars -name "*.bin" ! -name "IP.BIN" | head -n 1)
-        FOUND_ELF=$(find jo_engine_src/mars -name "*.elf" | head -n 1)
-
-        if [ -n "$FOUND_BIN" ]; then
-          cp "$FOUND_BIN" cd_root/0.BIN
-        elif [ -n "$FOUND_ELF" ]; then
-          sh-elf-objcopy -O binary "$FOUND_ELF" cd_root/0.BIN
-        else
-          # Saf bağımsız Assembly dosyası için doğrudan 0x06004000 adresine linkle
-          sh-elf-as saturnpong.s -o build_work/saturnpong.o
-          sh-elf-ld -Ttext 0x06004000 build_work/saturnpong.o -o build_work/saturnpong.elf
-          sh-elf-objcopy -O binary build_work/saturnpong.elf cd_root/0.BIN
+    - name: Compile Assembly Source
+      run: |
+        cd jo_engine_src
+        if [ -d "mars" ]; then
+          cd mars
+          make clean || true
+          make || true
+          cd ..
         fi
 
-        ls -lh cd_root/0.BIN
-
-    - name: Build Sega Saturn ISO & CUE with genisoimage
+    - name: Capture Raw Build Artifacts
       run: |
-        mkdir -p final_cd_bundle
-
-        # Repodaki SaturnCD/IP.BIN/IP.BIN dosyasını al
+        mkdir -p raw_output
+        find jo_engine_src -name "*.bin" -exec cp {} raw_output/ \;
+        find jo_engine_src -name "*.elf" -exec cp {} raw_output/ \;
+        find jo_engine_src -name "*.o" -exec cp {} raw_output/ \;
         if [ -f "SaturnCD/IP.BIN/IP.BIN" ]; then
-          cp "SaturnCD/IP.BIN/IP.BIN" IP.BIN
+          cp SaturnCD/IP.BIN/IP.BIN raw_output/
+        fi
+
+    - name: Upload Raw Artifacts for Packager
+      uses: actions/upload-artifact@v4
+      with:
+        name: raw-build-files
+        path: raw_output/
+
+  package-cd:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository (For IP.BIN access)
+      uses: actions/checkout@v4
+
+    - name: Install ISO Packaging Tool
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y genisoimage zip
+
+    - name: Download Raw Build Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: raw-build-files
+        path: downloaded_raw
+
+    - name: Package Sega Saturn CD with genisoimage
+      run: |
+        mkdir -p saturn_cd_staging cd_root final_cd_bundle
+        
+        # Derlenen dosyaları staging alanına kopyalıyoruz
+        find downloaded_raw -maxdepth 2 -type f \( -name "*.bin" -o -name "*.elf" -o -name "*.o" -o -name "*.BIN" \) -not -name "IP.BIN" -exec cp {} saturn_cd_staging/ \;
+        
+        cd saturn_cd_staging
+        ls -la
+        
+        # Jo Engine standartlarında saf binary dosyasını 0.bin yapıyoruz
+        if [ -f "saturnpong.elf" ] && [ ! -f "0.bin" ]; then
+          sh-elf-objcopy -O binary saturnpong.elf 0.bin || cp saturnpong.elf 0.bin
+        elif [ -f "saturnpong.o" ] && [ ! -f "0.bin" ]; then
+          sh-elf-objcopy -O binary saturnpong.o 0.bin || cp saturnpong.o 0.bin
+        elif [ -f "saturnpong.bin" ] && [ ! -f "0.bin" ]; then
+          cp saturnpong.bin 0.bin
+        endif
+        
+        # 0.bin dosyasını ISO kök dizinine taşıyoruz
+        if [ -f "0.bin" ]; then
+          cp 0.bin ../cd_root/
         else
-          echo "HATA: SaturnCD/IP.BIN/IP.BIN bulunamadı!"
+          echo "HATA: Derlenmiş 0.bin bulunamadı!"
           exit 1
         fi
-
-        # IP.BIN dosyasını -G ile ISO'nun ilk 16 sektörüne (boot alanına) yaz ve 0.BIN'i içine paketle
+        
+        cd ..
+        
+        # Repodaki gerçek SaturnCD/IP.BIN/IP.BIN dosyasını alıyoruz
+        if [ -f "SaturnCD/IP.BIN/IP.BIN" ]; then
+          cp "SaturnCD/IP.BIN/IP.BIN" IP.BIN
+        elif [ -f "downloaded_raw/IP.BIN" ]; then
+          cp downloaded_raw/IP.BIN IP.BIN
+        else
+          echo "HATA: IP.BIN bulunamadı!"
+          exit 1
+        fi
+        
+        # genisoimage ile ISO imajını üretiyoruz (-G boot sektörünü ilk 16 sektöre yazar)
         genisoimage \
           -sysid "SEGA SATURN" \
           -volid "SATURNPONG" \
@@ -90,20 +148,15 @@ jobs:
           -full-iso9660-filenames \
           -o final_cd_bundle/SaturnPong.iso \
           cd_root/
-
-        # Emülatörler ve ODE'ler için standart MODE1/2048 CUE dosyası oluştur
+          
+        # Emülatörler için standart CUE dosyası oluşturuyoruz
         cat << 'EOF' > final_cd_bundle/SaturnPong.cue
         FILE "SaturnPong.iso" BINARY
           TRACK 01 MODE1/2048
             INDEX 01 00:00:00
         EOF
-
-        # Doğrulama: ISO başındaki SEGA imzasını ve içindeki 0.BIN dosyasını logda göster
-        echo "--- Boot Sektörü Kontrolü ---"
-        head -c 64 final_cd_bundle/SaturnPong.iso | strings || true
-        echo "--- ISO İçeriği Kontrolü ---"
-        isoinfo -l -i final_cd_bundle/SaturnPong.iso
-
+        
+        ls -la final_cd_bundle/
         zip -j SaturnPong-Official-CD.zip final_cd_bundle/SaturnPong.iso final_cd_bundle/SaturnPong.cue
 
     - name: Upload Playable Saturn CD Artifact
