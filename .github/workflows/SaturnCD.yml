@@ -1,22 +1,98 @@
-name: SaturnCD-Packager
+name: SaturnCD
 
 on:
-  workflow_run:
-    workflows: ["Build SaturnPong (Jo Engine v2026.3 & Artifacts)"]
-    types:
-      - completed
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+  actions: write
 
 jobs:
-  package-cd:
+  build:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     steps:
-    - name: Download Artifacts from Main Workflow
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install Build Prerequisites & Unzip
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential wget unzip
+
+    - name: Download Jo Engine v2026.3 via Direct Zip Archive
+      run: |
+        wget -O jo_engine.zip https://github.com/johannes-fetz/joengine/archive/refs/tags/v2026.3.zip
+        unzip -q jo_engine.zip
+        mv joengine-2026.3 jo_engine_src
+
+    - name: Setup Toolchain and Integrate Assembly Source
+      run: |
+        cd jo_engine_src
+        chmod -R +x Compiler/LINUX/ || true
+        
+        if [ -d "mars" ]; then
+          rm -f mars/*.c mars/*.cpp mars/*.h || true
+          cp ../saturnpong.s mars/
+          
+          # Repodaki SaturnCD/IP.BIN klasöründen IP.BIN dosyasını alıyoruz
+          if [ -f "../SaturnCD/IP.BIN/IP.BIN" ]; then
+            cp ../SaturnCD/IP.BIN/IP.BIN mars/IP.BIN
+            echo "IP.BIN successfully copied from SaturnCD/IP.BIN/IP.BIN"
+          fi
+          
+          echo "TARGET = saturnpong" > mars/Makefile
+          echo "SRCS = saturnpong.s" >> mars/Makefile
+          echo "JO_ENGINE_SRC = .." >> mars/Makefile
+          echo "all:" >> mars/Makefile
+          echo "	sh-elf-gcc -c saturnpong.s -o saturnpong.o" >> mars/Makefile
+          echo "	include \$(JO_ENGINE_SRC)/Makefile.cfg" >> mars/Makefile
+        fi
+
+    - name: Compile Assembly Source
+      run: |
+        cd jo_engine_src
+        if [ -d "mars" ]; then
+          cd mars
+          make clean || true
+          make || true
+          cd ..
+        fi
+
+    - name: Capture Raw Build Artifacts
+      run: |
+        mkdir -p raw_output
+        find jo_engine_src -name "*.iso" -exec cp {} raw_output/ \;
+        find jo_engine_src -name "*.bin" -exec cp {} raw_output/ \;
+        find jo_engine_src -name "*.cue" -exec cp {} raw_output/ \;
+        find jo_engine_src -name "*.elf" -exec cp {} raw_output/ \;
+        find jo_engine_src -name "*.o" -exec cp {} raw_output/ \;
+        if [ -f "SaturnCD/IP.BIN/IP.BIN" ]; then
+          cp SaturnCD/IP.BIN/IP.BIN raw_output/
+        fi
+
+    - name: Upload Raw Artifacts for Packager
+      uses: actions/upload-artifact@v4
+      with:
+        name: raw-build-files
+        path: raw_output/
+
+  package-cd:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository (For IP.BIN access)
+      uses: actions/checkout@v4
+
+    - name: Download Raw Build Artifacts
       uses: actions/download-artifact@v4
       with:
-        run_id: ${{ github.event.workflow_run.id }}
-        github-token: ${{ secrets.GITHUB_TOKEN }}
+        name: raw-build-files
+        path: downloaded_raw
 
     - name: Download Jo Engine v2026.3 (For Native CueMaker Tool)
       run: |
@@ -29,13 +105,13 @@ jobs:
       run: |
         mkdir -p saturn_cd_staging
         
-        # İlk workflow'dan gelen tüm dosyaları çalışma alanına alıyoruz
-        find . -maxdepth 4 -type f \( -name "*.bin" -o -name "*.elf" -o -name "*.o" -o -name "*.BIN" \) -not -path "*/jo_engine_src/*" -exec cp {} saturn_cd_staging/ \;
+        # Derlenen dosyaları ve olası IP.BIN dosyalarını staging alanına taşıyoruz
+        find downloaded_raw -maxdepth 2 -type f \( -name "*.bin" -o -name "*.elf" -o -name "*.o" -o -name "*.BIN" \) -exec cp {} saturn_cd_staging/ \;
         
         cd saturn_cd_staging
         ls -la
         
-        # Dosya adını Jo Engine standardına (0.bin) hizalıyoruz
+        # Jo Engine standartlarında binary adını 0.bin yapıyoruz
         if [ -f "saturnpong.elf" ] && [ ! -f "0.bin" ]; then
           cp saturnpong.elf 0.bin
         elif [ -f "saturnpong.o" ] && [ ! -f "0.bin" ]; then
@@ -44,21 +120,16 @@ jobs:
           cp saturnpong.bin 0.bin
         fi
         
-        # SaturnCD/IP.BIN/IP.BIN klasör yapısından veya artifact içinden IP.BIN dosyasını bulup kopyalıyoruz
+        # Repodaki gerçek IP.BIN dosyasını SaturnCD/IP.BIN/IP.BIN konumundan yerine yerleştiriyoruz
         if [ -f "IP.BIN" ]; then
           echo "IP.BIN is already in place."
-        elif [ -f "SaturnCD/IP.BIN/IP.BIN" ]; then
-          cp SaturnCD/IP.BIN/IP.BIN ./IP.BIN
         elif [ -f "../SaturnCD/IP.BIN/IP.BIN" ]; then
           cp ../SaturnCD/IP.BIN/IP.BIN ./IP.BIN
+          echo "IP.BIN successfully positioned from SaturnCD/IP.BIN/IP.BIN"
+        elif [ -f "../jo_engine_src/IP.BIN" ]; then
+          cp ../jo_engine_src/IP.BIN ./IP.BIN
         else
-          # Eğer yukarıdakilerle eşleşmezse Jo Engine kaynaklarındakini alalım
-          FOUND_IP=$(find ../jo_engine_src -name "IP.BIN" | head -n 1)
-          if [ -n "$FOUND_IP" ]; then
-            cp "$FOUND_IP" ./IP.BIN
-          else
-            dd if=/dev/zero of=IP.BIN bs=1024 count=2 || true
-          fi
+          dd if=/dev/zero of=IP.BIN bs=1024 count=2 || true
         fi
         
         # Resmi JoEngineCueMaker aracını çalıştırıyoruz
