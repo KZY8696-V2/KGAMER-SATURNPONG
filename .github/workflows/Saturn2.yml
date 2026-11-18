@@ -100,11 +100,7 @@ jobs:
             -o final_output/SaturnPong.iso \
             cd_root/
 
-            cat << 'EOF' > final_output/SaturnPong.cue
-            FILE "SaturnPong.iso" BINARY
-            TRACK 01 MODE1/2048
-            INDEX 01 00:00:00
-            EOF
+          printf 'FILE "SaturnPong.iso" BINARY\n  TRACK 01 MODE1/2048\n    INDEX 01 00:00:00\n' > final_output/SaturnPong.cue
         fi
 
         find jo_engine_src -name "*.iso" -exec cp {} final_output/ \; || true
