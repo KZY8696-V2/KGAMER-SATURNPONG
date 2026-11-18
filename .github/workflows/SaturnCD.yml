@@ -1,8 +1,8 @@
-name: SaturnCD
+name: SaturnCD-Packager
 
 on:
   workflow_run:
-    workflows: ["Build SaturnPong (Jo Engine v2026.3 & Artifacts)"]
+    workflows: ["SaturnCD"]
     types:
       - completed
 
@@ -12,7 +12,7 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     steps:
-    - name: Download Artifacts from Build Workflow
+    - name: Download Artifacts from Main Workflow
       uses: actions/download-artifact@v4
       with:
         run_id: ${{ github.event.workflow_run.id }}
@@ -25,17 +25,17 @@ jobs:
         mv joengine-2026.3 jo_engine_src
         chmod -R +x jo_engine_src/Compiler/LINUX/ || true
 
-    - name: Run Jo Engine Native CueMaker (No Compilation)
+    - name: Run Jo Engine Native CueMaker & Package CD
       run: |
         mkdir -p saturn_cd_staging
         
-        # İlk workflow'dan gelen ham binary/elf/o dosyalarını çalışma alanına taşıyoruz
-        find . -maxdepth 3 -type f \( -name "*.bin" -o -name "*.elf" -o -name "*.o" \) -not -path "*/jo_engine_src/*" -exec cp {} saturn_cd_staging/ \;
+        # Önceki workflow'dan gelen tüm binary/elf/o ve IP.BIN dosyalarını alıyoruz
+        find . -maxdepth 3 -type f \( -name "*.bin" -o -name "*.elf" -o -name "*.o" -o -name "*.BIN" \) -not -path "*/jo_engine_src/*" -exec cp {} saturn_cd_staging/ \;
         
         cd saturn_cd_staging
         ls -la
         
-        # Jo Engine'in beklediği 0.bin isimlendirme standardına hizalıyoruz
+        # Dosya adını Jo Engine standardına (0.bin) hizalıyoruz
         if [ -f "saturnpong.elf" ] && [ ! -f "0.bin" ]; then
           cp saturnpong.elf 0.bin
         elif [ -f "saturnpong.o" ] && [ ! -f "0.bin" ]; then
@@ -44,12 +44,16 @@ jobs:
           cp saturnpong.bin 0.bin
         fi
         
-        # Boot sektörü için IP.BIN kopyalıyoruz
-        if [ ! -f "IP.BIN" ]; then
-          cp ../jo_engine_src/IP.BIN ./ || true
+        # IP.BIN kontrolü
+        if [ -f "IP.BIN" ]; then
+          echo "IP.BIN is ready."
+        elif [ -f "../jo_engine_src/IP.BIN" ]; then
+          cp ../jo_engine_src/IP.BIN ./
+        else
+          dd if=/dev/zero of=IP.BIN bs=1024 count=2 || true
         fi
         
-        # Resmi JoEngineCueMaker aracını çalıştırarak CUE ve ISO dosyalarını üretiyoruz
+        # Resmi JoEngineCueMaker aracını çalıştırıyoruz
         CUE_MAKER="../jo_engine_src/Compiler/LINUX/Other Utilities/JoEngineCueMaker"
         if [ -f "$CUE_MAKER" ]; then
           echo "Running official JoEngineCueMaker..."
@@ -63,7 +67,7 @@ jobs:
     - name: Archive Final Saturn CD Files
       run: |
         mkdir -p final_cd_bundle
-        find saturn_cd_staging -type f \( -name "*.iso" -o -name "*.cue" -o -name "*.bin" -o -name "*.img" \) -exec cp {} final_cd_bundle/ \;
+        find saturn_cd_staging -type f \( -name "*.iso" -o -name "*.cue" -o -name "*.bin" -o -name "*.img" -o -name "*.BIN" \) -exec cp {} final_cd_bundle/ \;
         
         ls -la final_cd_bundle/
         zip -r SaturnPong-Official-CD.zip final_cd_bundle/
