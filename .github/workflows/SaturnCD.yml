@@ -2,7 +2,7 @@ name: SaturnCD-Packager
 
 on:
   workflow_run:
-    workflows: ["SaturnCD"]
+    workflows: ["Build SaturnPong (Jo Engine v2026.3 & Artifacts)"]
     types:
       - completed
 
