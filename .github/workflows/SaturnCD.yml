@@ -38,7 +38,6 @@ jobs:
           rm -f mars/*.c mars/*.cpp mars/*.h || true
           cp ../saturnpong.s mars/
           
-          # Repodaki SaturnCD/IP.BIN klasöründen IP.BIN dosyasını alıyoruz
           if [ -f "../SaturnCD/IP.BIN/IP.BIN" ]; then
             cp ../SaturnCD/IP.BIN/IP.BIN mars/IP.BIN
             echo "IP.BIN successfully copied from SaturnCD/IP.BIN/IP.BIN"
@@ -101,22 +100,19 @@ jobs:
       run: |
         mkdir -p saturn_cd_staging cd_root final_cd_bundle
         
-        # Derlenen dosyaları staging alanına kopyalıyoruz
         find downloaded_raw -maxdepth 2 -type f \( -name "*.bin" -o -name "*.elf" -o -name "*.o" -o -name "*.BIN" \) -not -name "IP.BIN" -exec cp {} saturn_cd_staging/ \;
         
         cd saturn_cd_staging
         ls -la
         
-        # Jo Engine standartlarında saf binary dosyasını 0.bin yapıyoruz
         if [ -f "saturnpong.elf" ] && [ ! -f "0.bin" ]; then
           sh-elf-objcopy -O binary saturnpong.elf 0.bin || cp saturnpong.elf 0.bin
         elif [ -f "saturnpong.o" ] && [ ! -f "0.bin" ]; then
           sh-elf-objcopy -O binary saturnpong.o 0.bin || cp saturnpong.o 0.bin
         elif [ -f "saturnpong.bin" ] && [ ! -f "0.bin" ]; then
           cp saturnpong.bin 0.bin
-        endif
+        fi
         
-        # 0.bin dosyasını ISO kök dizinine taşıyoruz
         if [ -f "0.bin" ]; then
           cp 0.bin ../cd_root/
         else
@@ -126,7 +122,6 @@ jobs:
         
         cd ..
         
-        # Repodaki gerçek SaturnCD/IP.BIN/IP.BIN dosyasını alıyoruz
         if [ -f "SaturnCD/IP.BIN/IP.BIN" ]; then
           cp "SaturnCD/IP.BIN/IP.BIN" IP.BIN
         elif [ -f "downloaded_raw/IP.BIN" ]; then
@@ -136,7 +131,6 @@ jobs:
           exit 1
         fi
         
-        # genisoimage ile ISO imajını üretiyoruz (-G boot sektörünü ilk 16 sektöre yazar)
         genisoimage \
           -sysid "SEGA SATURN" \
           -volid "SATURNPONG" \
@@ -149,7 +143,6 @@ jobs:
           -o final_cd_bundle/SaturnPong.iso \
           cd_root/
           
-        # Emülatörler için standart CUE dosyası oluşturuyoruz
         cat << 'EOF' > final_cd_bundle/SaturnPong.cue
         FILE "SaturnPong.iso" BINARY
           TRACK 01 MODE1/2048
