@@ -2,7 +2,7 @@ name: SaturnCD-Packager
 
 on:
   workflow_run:
-    workflows: ["Build SaturnPong (Jo Engine v2026.3 & Artifacts)"]
+    workflows: ["SaturnCD"]
     types:
       - completed
 
@@ -29,8 +29,8 @@ jobs:
       run: |
         mkdir -p saturn_cd_staging
         
-        # Önceki workflow'dan gelen tüm binary/elf/o ve IP.BIN dosyalarını alıyoruz
-        find . -maxdepth 3 -type f \( -name "*.bin" -o -name "*.elf" -o -name "*.o" -o -name "*.BIN" \) -not -path "*/jo_engine_src/*" -exec cp {} saturn_cd_staging/ \;
+        # İlk workflow'dan gelen tüm dosyaları çalışma alanına alıyoruz
+        find . -maxdepth 4 -type f \( -name "*.bin" -o -name "*.elf" -o -name "*.o" -o -name "*.BIN" \) -not -path "*/jo_engine_src/*" -exec cp {} saturn_cd_staging/ \;
         
         cd saturn_cd_staging
         ls -la
@@ -44,13 +44,21 @@ jobs:
           cp saturnpong.bin 0.bin
         fi
         
-        # IP.BIN kontrolü
+        # SaturnCD/IP.BIN/IP.BIN klasör yapısından veya artifact içinden IP.BIN dosyasını bulup kopyalıyoruz
         if [ -f "IP.BIN" ]; then
-          echo "IP.BIN is ready."
-        elif [ -f "../jo_engine_src/IP.BIN" ]; then
-          cp ../jo_engine_src/IP.BIN ./
+          echo "IP.BIN is already in place."
+        elif [ -f "SaturnCD/IP.BIN/IP.BIN" ]; then
+          cp SaturnCD/IP.BIN/IP.BIN ./IP.BIN
+        elif [ -f "../SaturnCD/IP.BIN/IP.BIN" ]; then
+          cp ../SaturnCD/IP.BIN/IP.BIN ./IP.BIN
         else
-          dd if=/dev/zero of=IP.BIN bs=1024 count=2 || true
+          # Eğer yukarıdakilerle eşleşmezse Jo Engine kaynaklarındakini alalım
+          FOUND_IP=$(find ../jo_engine_src -name "IP.BIN" | head -n 1)
+          if [ -n "$FOUND_IP" ]; then
+            cp "$FOUND_IP" ./IP.BIN
+          else
+            dd if=/dev/zero of=IP.BIN bs=1024 count=2 || true
+          fi
         fi
         
         # Resmi JoEngineCueMaker aracını çalıştırıyoruz
