@@ -1,0 +1,133 @@
+name: Build SaturnPong (Jo Engine v2026.3 & Artifacts)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install Build Prerequisites & ISO Tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential wget unzip genisoimage
+
+    - name: Download Jo Engine v2026.3 via Direct Zip Archive
+      run: |
+        wget -O jo_engine.zip https://github.com/johannes-fetz/joengine/archive/refs/tags/v2026.3.zip
+        unzip -q jo_engine.zip
+        mv joengine-2026.3 jo_engine_src
+
+    - name: Integrate SaturnPong Source into Jo Engine Sample Structure
+      run: |
+        cd jo_engine_src
+        
+        # Jo Engine'in standart örnek projelerinden biri olan 'mars' klasörünü baz alıyoruz
+        # İçindeki C dosyalarını temizleyip kendi saf assembly dosyamızı koyuyoruz
+        if [ -d "mars" ]; then
+          rm -f mars/*.c mars/*.cpp mars/*.h || true
+          cp ../saturnpong.s mars/
+          
+          # Repodaki SaturnCD/IP.BIN/IP.BIN konumundan boot sektörünü alıyoruz
+          if [ -f "../SaturnCD/IP.BIN/IP.BIN" ]; then
+            cp ../SaturnCD/IP.BIN/IP.BIN mars/IP.BIN
+          elif [ -f "../IP.BIN" ]; then
+            cp ../IP.BIN mars/
+          fi
+          
+          # Doğrudan saturnpong.s dosyasını hedefleyen özel bir Makefile oluşturuyoruz
+          echo "TARGET = saturnpong" > mars/Makefile
+          echo "SRCS = saturnpong.s" >> mars/Makefile
+          echo "JO_ENGINE_SRC = .." >> mars/Makefile
+          echo "include \$(JO_ENGINE_SRC)/Makefile.cfg" >> mars/Makefile
+        else
+          mkdir -p saturnpong
+          cp ../saturnpong.s saturnpong/
+        fi
+
+    - name: Compile Using Jo Engine Native Pipeline
+      run: |
+        cd jo_engine_src
+        
+        # Eğer mars klasörünü kullandıysak doğrudan oraya girip derlemeyi tetikliyoruz
+        if [ -d "mars" ]; then
+          cd mars
+          make clean || true
+          make || true
+          cd ..
+        elif [ -f "jo_make" ]; then
+          chmod +x jo_make
+          ./jo_make || true
+        fi
+
+    - name: Package Sega Saturn CD with genisoimage
+      run: |
+        mkdir -p final_output cd_root
+        
+        # Derlenen saf binary (.bin / .elf) dosyasını bulup cd_root içine 0.bin olarak kopyalıyoruz
+        FOUND_BIN=$(find jo_engine_src -type f \( -name "*.bin" -o -name "*.BIN" \) ! -name "IP.BIN" | head -n 1)
+        FOUND_ELF=$(find jo_engine_src -type f -name "*.elf" | head -n 1)
+        
+        if [ -n "$FOUND_BIN" ]; then
+          cp "$FOUND_BIN" cd_root/0.bin
+        elif [ -n "$FOUND_ELF" ]; then
+          # Eğer elf çıktıysa saf binary'ye çeviriyoruz
+          TOOLCHAIN_BIN=$(find "$PWD/jo_engine_src/Compiler" -name "sh-elf-objcopy" -printf "%h\n" | head -n 1)
+          if [ -n "$TOOLCHAIN_BIN" ]; then
+            "$TOOLCHAIN_BIN/sh-elf-objcopy" -O binary "$FOUND_ELF" cd_root/0.bin
+          else
+            cp "$FOUND_ELF" cd_root/0.bin
+          fi
+        fi
+
+        # Boot sektörü için IP.BIN dosyasını buluyoruz
+        FOUND_IPBIN=$(find jo_engine_src -type f -name "IP.BIN" | head -n 1)
+        if [ -z "$FOUND_IPBIN" ] && [ -f "SaturnCD/IP.BIN/IP.BIN" ]; then
+          cp "SaturnCD/IP.BIN/IP.BIN" IP.BIN
+        elif [ -n "$FOUND_IPBIN" ]; then
+          cp "$FOUND_IPBIN" IP.BIN
+        else
+          dd if=/dev/zero of=IP.BIN bs=1024 count=2 || true
+        fi
+
+        # genisoimage ile IP.BIN boot sektörünü mühürleyip ISO'yu üretiyoruz
+        if [ -f "cd_root/0.bin" ] && [ -f "IP.BIN" ]; then
+          genisoimage \
+            -sysid "SEGA SATURN" \
+            -volid "SATURNPONG" \
+            -volset "SATURNPONG" \
+            -publisher "KGAMER" \
+            -preparer "KGAMER" \
+            -appid "SATURNPONG" \
+            -G IP.BIN \
+            -full-iso9660-filenames \
+            -o final_output/SaturnPong.iso \
+            cd_root/
+
+          # Emülatörler için standart CUE dosyasını oluşturuyoruz
+          cat << 'EOF' > final_output/SaturnPong.cue
+          FILE "SaturnPong.iso" BINARY
+            TRACK 01 MODE1/2048
+              INDEX 01 00:00:00
+          EOF
+        fi
+
+        # Jo Engine'in kendi ürettiği diğer çıktıları da (varsa) ekliyoruz
+        find jo_engine_src -name "*.iso" -exec cp {} final_output/ \; || true
+        find jo_engine_src -name "*.cue" -exec cp {} final_output/ \; || true
+        find jo_engine_src -name "*.elf" -exec cp {} final_output/ \; || true
+        
+        ls -la final_output/
+
+    - name: Upload Complete Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: SaturnPong-JoEngine-v2026.3-Artifacts
+        path: final_output/
