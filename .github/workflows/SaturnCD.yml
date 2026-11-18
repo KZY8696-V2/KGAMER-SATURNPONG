@@ -2,7 +2,7 @@ name: SaturnCD
 
 on:
   workflow_run:
-    workflows: ["Build SaturnPong (Jo Engine v2026.3 Native Pipeline)"]
+    workflows: ["Build SaturnPong (Jo Engine v2026.3 & Artifacts)"]
     types:
       - completed
 
