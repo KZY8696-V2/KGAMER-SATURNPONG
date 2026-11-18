@@ -1,4 +1,4 @@
-name: Saturn CD Converter & Packager
+name: SaturnCD
 
 on:
   workflow_run:
@@ -29,13 +29,13 @@ jobs:
       run: |
         mkdir -p saturn_cd_staging
         
-        # İlk workflow'dan gelen dosyaları çalışma alanına taşıyoruz
+        # İlk workflow'dan gelen ham binary/elf/o dosyalarını çalışma alanına taşıyoruz
         find . -maxdepth 3 -type f \( -name "*.bin" -o -name "*.elf" -o -name "*.o" \) -not -path "*/jo_engine_src/*" -exec cp {} saturn_cd_staging/ \;
         
         cd saturn_cd_staging
         ls -la
         
-        # Jo Engine araçlarının beklediği isimlendirme standardı
+        # Jo Engine'in beklediği 0.bin isimlendirme standardına hizalıyoruz
         if [ -f "saturnpong.elf" ] && [ ! -f "0.bin" ]; then
           cp saturnpong.elf 0.bin
         elif [ -f "saturnpong.o" ] && [ ! -f "0.bin" ]; then
@@ -44,7 +44,7 @@ jobs:
           cp saturnpong.bin 0.bin
         fi
         
-        # IP.BIN eklenmesi
+        # Boot sektörü için IP.BIN kopyalıyoruz
         if [ ! -f "IP.BIN" ]; then
           cp ../jo_engine_src/IP.BIN ./ || true
         fi
